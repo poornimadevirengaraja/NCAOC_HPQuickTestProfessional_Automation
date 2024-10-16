@@ -1,0 +1,381 @@
+﻿'##################################################################################
+'#																							  																							   #
+'#		    Project Name  					:		NCAOC Audit																							    # 
+'#																																														   # 																						
+'#			Date				 					:		31 March 2011																							  #
+'#																																														   #
+'# 			Script Developed By 	:		SivaPratha and Poornima Devi														   #
+'#																																														   #
+'#          Script Name 					:		NCAOC																										  #
+'#																																														   #
+'#         	Last Modified  Date    	  :		6 April 2011	  																						    	#
+'#																																														  #
+'#################################################################################
+
+		'// Close all the caffeine process before script execution
+		systemutil.CloseProcessByName "caffeine.exe"
+
+		'// Close all browsers
+		systemutil.CloseProcessByName "iexplore.exe"
+
+		'//Capturing the execution start date and time
+		datevar = Date
+		execdate = replace(datevar,"/","-")
+		timevar = Time
+        exectime=replace(Time,":","-")
+		
+		'// Variable declaration
+		Caffeinepath ="D:\NCAOCAudit\caffeine.exe"
+		srcfile="D:\NCAOCAudit\Testdata\*.txt"
+		testdata = "D:\NCAOCAudit\Testdata\Input.xls"
+        GUIDfilepath = "D:\NCAOCAudit\Testdata\GUID_files\"
+
+		'// Get input file names
+		Set fso = CreateObject("Scripting.FileSystemObject")
+		Set f = fso.GetFolder (GUIDfilepath)
+		Set fc = f.Files
+		If fc.count <>1 Then
+			msgbox "There is no or more than one input file in the "&GUIDfilepath
+			ExitTestIteration
+		Else
+			For each f1 in fc
+				fname = f1.name
+				inputname = fso.getExtensionname(GUIDfilepath&fname)
+			Next
+		End If
+
+		fullfilename = GUIDfilepath&fname
+		splitfname = split(fname,".")
+        GUIDRep="D:\NCAOCAudit\Reports\"&splitfname(0)&"_output_on_"&execdate&"_at_"&exectime&".txt"
+		Excelfilename = splitfname(0)&".xls"
+  
+		'// Running Caffeine.exe to avoid the system from sleeping
+		systemutil.Run Caffeinepath
+
+		'// Impoting Input.xls content to the added sheet in the datatable
+		datatable.AddSheet "dinput"
+		datatable.ImportSheet testdata,1,"dinput"
+		wait 2
+		'// Getting values from datatable and store it to variable
+		iurl=datatable.Value("Url","dinput")
+		iusernm=datatable.Value("UserId","dinput")
+		ipass=datatable.Value("Password","dinput")
+		ienviron=datatable.Value("Environment","dinput")
+		icollect=datatable.Value("Collection","dinput")
+		
+		'// splitting collection and storing in array
+		collectsplit=split(icollect,",")
+       
+		'//  Processing the text input file & adding Date, Time, GUID, Collection names in first line
+		Const ForReading = 1
+		Const ForWriting = 2
+
+		If inputname = "txt"Then
+				collectionnames = ""
+				For cs = 0 to Ubound(collectsplit)
+                        collectionnames = collectionnames&"   "&"Present_in_"&collectsplit(cs)
+				Next
+				Set textFile = fso.OpenTextFile(fullfilename, ForReading )
+			 
+				contents = textFile.ReadAll
+				textFile.Close
+				firstLine = "Date   Time   GUID"&collectionnames
+				newContent = firstLine & vbCrLf & contents
+			 
+				Set textFile = fso.OpenTextFile( fullfilename, ForWriting  )
+				newcontent = Replace(newcontent,"   ",vbtab)
+				textFile.WriteLine newContent
+				textFile.Close
+			
+				'//Converting  to xls if input is text file
+				Dim oShell 
+				Set oShell = CreateObject ("WSCript.shell") 
+				oShell.run "cmd /C rename "&fullfilename&" "&Excelfilename
+				Set oShell = Nothing
+				Excelfilepath  = GUIDfilepath&Excelfilename
+		Else 
+		       '// If input is xls then following steps will be done
+				If inputname = "xls" Then
+						Set xlrowinsert = CreateObject("Excel.Application")
+						xlrowinsert.Visible = False
+						Set xldoc = xlrowinsert.workbooks.open(fullfilename)
+						Set xlsht = xldoc.worksheets(1)
+						xlsht.activate
+						xlsht.cells(1,1).EntireRow.Insert
+						xlsht.cells(1,1).value = "Date"
+						xlsht.cells(1,2).value = "Time"
+						xlsht.cells(1,3).value = "GUID"
+						colnum = 4
+						For each arr in collectsplit
+								xlsht.cells(1,colnum).value = "Present_in_"&arr
+								colnum = colnum +1
+						Next
+						xldoc.Save
+                        xlrowinsert.workbooks.Close
+                        xlrowinsert.Quit
+						set xldoc=Nothing
+						set  xlrowinsert=Nothing
+                Else
+						msgbox "Input file format is incorrect. Please provide input file in .txt ot .xls format"
+						ExitTestIteration
+				End If
+				Excelfilepath = fullfilename
+		End If
+				'// creating output text file and heading    
+				Set srcData=Createobject("scripting.filesystemobject")
+			    Set srcfile=srcData.createtextfile(GUIDRep,True)
+				collectionnames = ""
+				For cs = 0 to Ubound(collectsplit)
+                        collectionnames = collectionnames+"Present_in_"+collectsplit(cs)+vbtab
+				Next
+				'Set srcfile = srcData.OpenTextFile(GUIDRep, 2 )
+				firstLine = "Date"&vbtab&"Time"&vbtab&"GUID"&vbtab&collectionnames
+				srcfile.writeline firstLine
+				srcfile.Close
+				Set srcfile=Nothing
+				Set srcData=Nothing
+
+		'// Call function for SAFE login
+		Set objExplorer=createobject("InternetExplorer.Application")
+		objExplorer.visible=True
+		wait 5
+        objExplorer.Navigate(iurl) '// Navigate to the Easel URL
+		hwndval=objExplorer.hwnd '// Retrieving handler value for browser
+		window("hwnd:="&hwndval).Maximize '// Window Maximize
+		StartTime = SAFE_login (iurl,iusernm,ipass,ienviron,icollect)
+
+		'// Creating Output Text file
+	 
+		
+		'// Importing datas from GUID Input sheet to datatable
+		datatable.AddSheet "dGUID"
+		datatable.ImportSheet Excelfilepath,1,"dGUID"
+
+		'//Getting rowcount from xls Input sheet  and looping for all inputs
+		rowcnt=datatable.getsheet("dGUID").getrowcount
+        
+With Browser("SAFE")
+	For i=1 to rowcnt
+		datatable.SetCurrentRow(i)
+		rowvalue=datatable.Value("GUID","dGUID")
+
+		'// To check the length of each item in excel sheet
+		GUIDlength=Len(rowvalue)
+
+		If GUIDlength=33 Then
+			Resultdate=datatable.Value("Date","dGUID")
+			Resulttime=datatable.Value("Time","dGUID")
+			GUIDvalue=datatable.Value("GUID","dGUID")
+
+			'// To check all checkboxes of product selected if it is unchecked
+			Set objchk=description.Create()
+			objchk("html tag").value="INPUT"
+			objchk("type").value="checkbox"
+			objchk("disabled").value=0
+			objchk("checked").value=0
+			Set chkboxlist=.Page("Easel: Novus Search").WebTable("Preferences").ChildObjects(objchk)
+			For chk=0 to chkboxlist.count-1
+				chkboxlist(chk).set "on"
+				wait 5
+			Next
+
+			With .Page("Easel: Novus Search")
+				.WebEdit("value(queryString)").Set ":guid="""&Trim(rowvalue)&""""
+				.WebButton("Submit").Click
+				Func_pageload
+			End With
+
+			'// Checking if there is "Search has returned zero results" message in the web page
+			With Browser("SAFE")
+				If  .Page("Easel: Novus Search").WebElement("The search has returned").Exist(5) Then
+					For each roval in collectsplit
+						Columnname="Present_in_"&roval
+						Result="NO"
+						datatable.Value(Columnname,"dGUID") = Result
+					Next
+					Else
+						With .Page("Easel: Novus Search Results")
+							If .WebElement("WebTable").Exist(5) And  .Frame("novusDocument").WebXML("https://easel.thomson.com/ease").Exist(5) Then
+								Rocollection=.WebTable("Active Product").GetCellData(3,2)
+								inntextsplit=split(Rocollection," ")
+								For each roval in collectsplit
+									For col=0 to UBound(inntextsplit)
+										If inntextsplit(col)=roval Then
+											resfound=Func_numconv(inntextsplit(col+1))
+											If resfound=0 Then
+												Result="NO"
+												Columnname="Present_in_"&roval
+												datatable.Value(Columnname,"dGUID") = Result
+												Else
+													Result="Yes"
+													Columnname="Present_in_"&roval
+													datatable.Value(Columnname,"dGUID") = Result
+											End If
+											datatable.Value(Columnname,"dGUID") = Result
+										End If
+									Next 
+								Next
+							End If
+						End With
+				End If
+			End With
+			'
+			'// Go back to the search page to query the next guid
+			With Browser("SAFE")
+				.Page("Easel: Novus Search Results").Link("Novus Search").Click
+				Func_Pageload
+				.Page("Easel: Novus Search").WebEdit("value(queryString)").set ""
+			End with
+
+			' // writing results to Output text file
+			For each ele in  collectsplit
+				outputresult=datatable.Value("Present_in_"&ele ,"dGUID")
+				ores=ores&outputresult&vbtab
+			Next
+			Set srcData=createobject("scripting.filesystemobject")
+			Set srcfile=srcData.opentextfile(GUIDRep,8,True)
+			srcfile.writeline Resultdate+vbtab+Resulttime+vbtab+GUIDvalue+vbtab+ores+vbNew
+			srcfile.close
+			Set srcfile=Nothing
+			Set srcData=Nothing
+			ores=""
+
+		End if
+
+		EndTime = FormatDateTime (Time, vbShortTime)
+		stimesplit = Split(StartTime,":")
+		etimesplit = Split(EndTime,":")
+		If etimesplit(0) - stimesplit(0) >= 3 Then
+			'// Logging out from SAFE account
+			.Page("Easel: Novus Search").Link("log out").Click
+			.Page("Easel: Logged Out").Sync
+			.Close '// Closing the browser
+			' // Opening the browser
+			Set objExplorer=createobject("InternetExplorer.Application")
+			objExplorer.visible=True
+			wait 10
+			objExplorer.Navigate(iurl) '// Navigate to the Easel URL
+			hwndval=objExplorer.hwnd '// Retrieving handler value for browser
+			window("hwnd:="&hwndval).Maximize '// Window Maximize
+			StartTime = SAFE_login (iurl,iusernm,ipass,ienviron,icollect)
+		End If
+		If i = rowcnt Then
+			'// Logging out from SAFE account
+			.Page("Easel: Novus Search").Link("log out").Click
+			.Page("Easel: Logged Out").Sync
+			.Close '// Closing the browser
+		End If
+	Next
+End With
+'// Deleting input txt and xls file
+		If fso.FileExists(Excelfilepath) Then
+				fso.DeleteFile(Excelfilepath)
+		End If
+		 Set fso = Nothing
+		
+		'// Closing caffeine
+		systemutil.CloseProcessByName "caffeine.exe"
+	
+'##############################################################  End of Script  ##############################################################
+
+'*******************************************************************************************
+'Function to check if the page has loaded completely
+'*******************************************************************************************
+		Public Function  Func_Pageload()
+		    
+            tmout=0
+			Do Until (objExplorer.readyState = 4 or tmout=900)
+				Wait(1)
+				tmout=tmout+1
+			Loop
+			
+		End Function
+		
+'*******************************************************************************************
+'Function to retrieve the numbers in the input string
+'*******************************************************************************************
+		Public Function Func_numconv(stringvalue)
+
+			l_String=stringvalue
+			l_num=""
+			For ind=1 to len(l_String)
+				y=mid(l_String,ind,1)
+					If ( isnumeric(y)=True) Then
+						l_num= l_num & y
+					End If
+			Next
+			Func_numconv =  l_num
+			
+		End Function
+
+'*******************************************************************************************
+'Function for SAFE login and environment set up for guid search
+'*******************************************************************************************
+
+Public Function SAFE_login(iurl,iusernm,ipass,ienviron,icollect)
+
+		Start_Time = FormatDateTime (Time, vbShortTime)
+
+		With Browser("SAFE")
+				If   .Page("SAFE").WebEdit("USER").Exist(5) Then
+						With .Page("SAFE")
+								.WebEdit("USER").Set iusernm
+								.WebEdit("PASSWORD").Set ipass
+								.Link("LOGIN").Click
+						End With
+						If Browser("SAFE").Dialog("Security Alert").Exist(10) Then
+							Browser("SAFE").Dialog("Security Alert").WinButton("OK").Click
+						End If
+		
+						'// Calling function to check if the page load is complete
+						Func_Pageload()
+	
+						'// Check if the login is successful or not
+						If Not .Page("Easel: Invalid User").Link("here").Exist(5) Then
+								set owc=createobject("wscript.shell")
+								owc.popup"Login failed. "&vbcrlf&"Please check the username and password",2
+								ExitTestIteration
+								.Close '// Closing the browser
+						Else
+								.Page("Easel: Invalid User").Link("here").Click
+						End If
+				End if
+				.Page("Easel").Link("Products").Click
+
+				'// Calling function to check if the page load is complete
+				Func_Pageload()
+	
+				'// Selecting Environment "Prod"
+				With .Page("Easel: Novus Search")
+                        .WebElement("Update Environment").Click
+                        .Frame("updateenvironment_win_content").WebList("environment").Select ienviron
+                        .Frame("updateenvironment_win_content").WebButton("Continue").Click
+					   ' If Browser("SAFE").Dialog("Security Information").Exist(10) Then
+							'Browser("SAFE").Dialog("Security Information").WinButton("Yes").Click
+					   ' End If
+					   wait(5)
+                        .WebElement("innertext:=Add Product","html tag:=SPAN").Click
+				End with
+	
+				'//Adding products 
+				prodarray=Split(icollect,",")
+				For each val in prodarray
+						With .Page("Easel: Novus Search")
+								If .Frame("addproducts_win_content").Exist(5) Then
+										.Frame("addproducts_win_content").WebEdit("addProductField").Set Trim(val)
+                                        .Frame("addproducts_win_content").WebButton("Add").Click
+										wait(5)
+								End If
+						End with
+				Next
+	
+				With .Page("Easel: Novus Search")
+						.Frame("addproducts_win_content").WebButton("Save").Click
+						'wait(10)
+				End With
+		End With 
+		SAFE_login = Start_Time
+		
+End Function
+
+'############################################################# End of Function  #############################################################

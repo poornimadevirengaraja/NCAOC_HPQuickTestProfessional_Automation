@@ -1,0 +1,25 @@
+'	wait 5
+	scriptpath=Script()
+	Dim qtApp
+	Set qtApp = CreateObject("QuickTest.Application")
+	set owc=createobject("wscript.shell")
+	owc.popup " Execution is going to start!",2
+	qtApp.Launch
+	qtApp.Visible = True
+	qtApp.Options.Run.RunMode = "Normal"
+	qtApp.Options.Run.ViewResults = False
+	qtApp.Open scriptpath, True 
+	qtApp.Test.Run
+	qtApp.Quit
+	Set qtApp = Nothing
+	owc.popup "Script Execution successfully finished",2
+	wscript.sleep 500  
+
+        wscript.sleep 2000  
+
+public function Script()
+
+Script = "D:\NCAOCAudit\Mainscript\NCAOC"
+
+end function
+
